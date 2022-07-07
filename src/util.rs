@@ -1,9 +1,9 @@
-use std::io::{Read, Result, Seek, SeekFrom};
-use std::sync::{Arc, Mutex};
 use aes::Aes128;
-use ctr::Ctr128;
 use ctr::cipher::NewStreamCipher;
 use ctr::cipher::StreamCipher;
+use ctr::Ctr128;
+use std::io::{Read, Result, Seek, SeekFrom};
+use std::sync::{Arc, Mutex};
 
 pub type Shared<T> = Arc<Mutex<T>>;
 
@@ -11,9 +11,7 @@ pub trait ReadSeek: Read + Seek + Send + Sync {}
 impl<R: Read + Seek + Send + Sync> ReadSeek for R {}
 
 pub fn reader_read_val<T>(reader: &Shared<dyn ReadSeek>) -> Result<T> {
-    let mut t: T = unsafe {
-        std::mem::zeroed()
-    };
+    let mut t: T = unsafe { std::mem::zeroed() };
 
     let t_buf = unsafe {
         std::slice::from_raw_parts_mut(&mut t as *mut _ as *mut u8, std::mem::size_of::<T>())
@@ -25,15 +23,12 @@ pub fn reader_read_val<T>(reader: &Shared<dyn ReadSeek>) -> Result<T> {
 
 pub struct DataReader {
     offset: usize,
-    data: Vec<u8>
+    data: Vec<u8>,
 }
 
 impl DataReader {
     pub fn new(data: Vec<u8>) -> Self {
-        Self {
-            offset: 0,
-            data: data
-        }
+        Self { offset: 0, data }
     }
 }
 
@@ -53,7 +48,7 @@ impl Seek for DataReader {
             SeekFrom::Current(pos_val) => {
                 let new_offset = self.offset as i64 + pos_val;
                 self.offset = new_offset as usize;
-            },
+            }
             SeekFrom::Start(pos_val) => self.offset = pos_val as usize,
             SeekFrom::End(pos_val) => {
                 let new_offset = self.data.len() as i64 + pos_val;
@@ -74,18 +69,27 @@ pub struct Aes128CtrReader {
     offset: u64,
     base_reader: Shared<dyn ReadSeek>,
     ctr: u64,
-    key: Vec<u8>
+    key: Vec<u8>,
 }
 
 impl Aes128CtrReader {
-    pub fn new(base_reader: Shared<dyn ReadSeek>, base_offset: u64, ctr: u64, key: Vec<u8>) -> Self {
-        base_reader.lock().unwrap().seek(SeekFrom::Start(base_offset)).unwrap();
+    pub fn new(
+        base_reader: Shared<dyn ReadSeek>,
+        base_offset: u64,
+        ctr: u64,
+        key: Vec<u8>,
+    ) -> Self {
+        base_reader
+            .lock()
+            .unwrap()
+            .seek(SeekFrom::Start(base_offset))
+            .unwrap();
         Self {
-            base_offset: base_offset,
+            base_offset,
             offset: base_offset,
-            base_reader: base_reader,
-            ctr: ctr,
-            key: key
+            base_reader,
+            ctr,
+            key,
         }
     }
 }
@@ -132,7 +136,7 @@ impl Seek for Aes128CtrReader {
             SeekFrom::Current(cur_pos) => {
                 let new_offset = self.offset as i64 + cur_pos;
                 self.offset = new_offset as u64;
-            },
+            }
             SeekFrom::Start(start_pos) => self.offset = self.base_offset + start_pos,
             SeekFrom::End(end_pos) => {
                 let new_offset = self.offset as i64 + end_pos;
@@ -140,7 +144,10 @@ impl Seek for Aes128CtrReader {
             }
         }
 
-        self.base_reader.lock().unwrap().seek(SeekFrom::Start(self.offset))
+        self.base_reader
+            .lock()
+            .unwrap()
+            .seek(SeekFrom::Start(self.offset))
     }
 }
 

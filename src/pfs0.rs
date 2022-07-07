@@ -1,5 +1,5 @@
+use crate::util::{reader_read_val, ReadSeek, Shared};
 use std::io::{Error, ErrorKind, Result, SeekFrom};
-use crate::util::{ReadSeek, Shared, reader_read_val};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
@@ -7,7 +7,7 @@ pub struct Header {
     pub magic: u32,
     pub file_count: u32,
     pub string_table_size: u32,
-    pub reserved: [u8; 0x4]
+    pub reserved: [u8; 0x4],
 }
 
 impl Header {
@@ -20,14 +20,14 @@ pub struct FileEntry {
     pub offset: u64,
     pub size: usize,
     pub string_table_offset: u32,
-    pub reserved: [u8; 0x4]
+    pub reserved: [u8; 0x4],
 }
 
 pub struct PFS0 {
     reader: Shared<dyn ReadSeek>,
     header: Header,
     file_entries: Vec<FileEntry>,
-    string_table: Vec<u8>
+    string_table: Vec<u8>,
 }
 
 impl PFS0 {
@@ -48,10 +48,10 @@ impl PFS0 {
         reader.lock().unwrap().read_exact(&mut str_table)?;
 
         Ok(Self {
-            reader: reader,
-            header: header,
-            file_entries: file_entries,
-            string_table: str_table
+            reader,
+            header,
+            file_entries,
+            string_table: str_table,
         })
     }
 
@@ -62,12 +62,12 @@ impl PFS0 {
             let mut bytes: Vec<u8> = Vec::new();
 
             let str_t = &self.string_table[entry.string_table_offset as usize..];
-            for i in 0..str_t.len() {
-                if str_t[i] == 0 {
+            for c in str_t {
+                if *c == 0 {
                     break;
                 }
 
-                bytes.push(str_t[i]);
+                bytes.push(*c);
             }
 
             file_names.push(String::from_utf8(bytes).unwrap());
@@ -94,11 +94,16 @@ impl PFS0 {
             return Err(Error::new(ErrorKind::UnexpectedEof, "EOF reached"));
         }
 
-        let base_offset = std::mem::size_of::<Header>() + std::mem::size_of::<FileEntry>() * self.header.file_count as usize + self.header.string_table_size as usize;
+        let base_offset = std::mem::size_of::<Header>()
+            + std::mem::size_of::<FileEntry>() * self.header.file_count as usize
+            + self.header.string_table_size as usize;
         let base_read_offset = base_offset + entry.offset as usize;
         let read_offset = base_read_offset + offset;
 
-        self.reader.lock().unwrap().seek(SeekFrom::Start(read_offset as u64))?;
+        self.reader
+            .lock()
+            .unwrap()
+            .seek(SeekFrom::Start(read_offset as u64))?;
         self.reader.lock().unwrap().read(buf)
     }
 }

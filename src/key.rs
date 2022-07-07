@@ -1,6 +1,6 @@
-use std::io::{BufRead, BufReader, Error, ErrorKind, Result};
-use hex::FromHex;
 use crate::util::ReadSeek;
+use hex::FromHex;
+use std::io::{BufRead, BufReader, Error, ErrorKind, Result};
 
 #[derive(Clone, Debug)]
 pub struct Keyset {
@@ -8,7 +8,7 @@ pub struct Keyset {
     pub key_area_keys_application: Vec<[u8; 0x10]>,
     pub key_area_keys_ocean: Vec<[u8; 0x10]>,
     pub key_area_keys_system: Vec<[u8; 0x10]>,
-    pub title_key_encryption_keys: Vec<[u8; 0x10]>
+    pub title_key_encryption_keys: Vec<[u8; 0x10]>,
 }
 
 impl Keyset {
@@ -16,8 +16,7 @@ impl Keyset {
         if name.starts_with(base_name) && (name.len() == base_name.len() + 2) {
             let idx_str = &name[name.len() - 2..];
             u8::from_str_radix(idx_str, 16).ok().map(|s| s as usize)
-        }
-        else {
+        } else {
             None
         }
     }
@@ -30,55 +29,62 @@ impl Keyset {
             key_area_keys_application: Vec::new(),
             key_area_keys_ocean: Vec::new(),
             key_area_keys_system: Vec::new(),
-            title_key_encryption_keys: Vec::new()
+            title_key_encryption_keys: Vec::new(),
         };
 
-        for line in lines {
-            if let Ok(line_str) = line {
-                let items: Vec<_> = line_str.split("=").collect();
-                if items.len() != 2 {
-                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid keyset key-value"));
-                }
-
-                let mut key = String::from(items[0]);
-                key.retain(|c| !c.is_whitespace());
-                let mut value = String::from(items[1]);
-                value.retain(|c| !c.is_whitespace());
-
-                let key_data = Vec::from_hex(value).expect("Invalid hex key");
-
-                if key.eq("header_key") {
-                    keyset.header_key = key_data.clone().try_into().unwrap();
-                }
-                else if let Some(idx) = Self::get_key_name_idx("key_area_key_application_", &key) {
-                    if idx >= keyset.key_area_keys_application.len() {
-                        keyset.key_area_keys_application.resize(idx, [0; 0x10]);
-                    }
-
-                    keyset.key_area_keys_application.insert(idx, key_data.clone().try_into().unwrap());
-                }
-                else if let Some(idx) = Self::get_key_name_idx("key_area_key_ocean_", &key) {
-                    if idx >= keyset.key_area_keys_ocean.len() {
-                        keyset.key_area_keys_ocean.resize(idx, [0; 0x10]);
-                    }
-
-                    keyset.key_area_keys_ocean.insert(idx, key_data.clone().try_into().unwrap());
-                }
-                else if let Some(idx) = Self::get_key_name_idx("key_area_key_system_", &key) {
-                    if idx >= keyset.key_area_keys_system.len() {
-                        keyset.key_area_keys_system.resize(idx, [0; 0x10]);
-                    }
-
-                    keyset.key_area_keys_system.insert(idx, key_data.clone().try_into().unwrap());
-                }
-                else if let Some(idx) = Self::get_key_name_idx("titlekek_", &key) {
-                    if idx >= keyset.title_key_encryption_keys.len() {
-                        keyset.title_key_encryption_keys.resize(idx, [0; 0x10]);
-                    }
-
-                    keyset.title_key_encryption_keys.insert(idx, key_data.clone().try_into().unwrap());
-                }
+        for line_str in lines.flatten() {
+            // if let Ok(line_str) = line {
+            let items: Vec<_> = line_str.split('=').collect();
+            if items.len() != 2 {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "Invalid keyset key-value",
+                ));
             }
+
+            let mut key = String::from(items[0]);
+            key.retain(|c| !c.is_whitespace());
+            let mut value = String::from(items[1]);
+            value.retain(|c| !c.is_whitespace());
+
+            let key_data = Vec::from_hex(value).expect("Invalid hex key");
+
+            if key.eq("header_key") {
+                keyset.header_key = key_data.clone().try_into().unwrap();
+            } else if let Some(idx) = Self::get_key_name_idx("key_area_key_application_", &key) {
+                if idx >= keyset.key_area_keys_application.len() {
+                    keyset.key_area_keys_application.resize(idx, [0; 0x10]);
+                }
+
+                keyset
+                    .key_area_keys_application
+                    .insert(idx, key_data.clone().try_into().unwrap());
+            } else if let Some(idx) = Self::get_key_name_idx("key_area_key_ocean_", &key) {
+                if idx >= keyset.key_area_keys_ocean.len() {
+                    keyset.key_area_keys_ocean.resize(idx, [0; 0x10]);
+                }
+
+                keyset
+                    .key_area_keys_ocean
+                    .insert(idx, key_data.clone().try_into().unwrap());
+            } else if let Some(idx) = Self::get_key_name_idx("key_area_key_system_", &key) {
+                if idx >= keyset.key_area_keys_system.len() {
+                    keyset.key_area_keys_system.resize(idx, [0; 0x10]);
+                }
+
+                keyset
+                    .key_area_keys_system
+                    .insert(idx, key_data.clone().try_into().unwrap());
+            } else if let Some(idx) = Self::get_key_name_idx("titlekek_", &key) {
+                if idx >= keyset.title_key_encryption_keys.len() {
+                    keyset.title_key_encryption_keys.resize(idx, [0; 0x10]);
+                }
+
+                keyset
+                    .title_key_encryption_keys
+                    .insert(idx, key_data.clone().try_into().unwrap());
+            }
+            // }
         }
 
         Ok(keyset)
