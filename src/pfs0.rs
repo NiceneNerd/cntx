@@ -1,5 +1,5 @@
 use crate::util::{reader_read_val, ReadSeek, Shared};
-use std::io::{Error, ErrorKind, Result, SeekFrom};
+use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
@@ -21,6 +21,60 @@ pub struct FileEntry {
     pub size: usize,
     pub string_table_offset: u32,
     pub reserved: [u8; 0x4],
+}
+
+pub struct PFS0FileReader {
+    inner: Shared<dyn ReadSeek>,
+    read_offset: u64,
+    file_size: u64,
+}
+
+unsafe impl Send for PFS0FileReader {}
+unsafe impl Sync for PFS0FileReader {}
+
+impl Read for PFS0FileReader {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.inner
+            .lock()
+            .unwrap()
+            .seek(SeekFrom::Start(self.read_offset))?;
+        self.inner.lock().unwrap().read(buf)
+    }
+}
+
+impl Seek for PFS0FileReader {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+        match pos {
+            SeekFrom::Start(offset) => {
+                let new_offset = self.read_offset + offset as u64;
+                if new_offset > self.file_size {
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        "Attempted to seek past end of file",
+                    ));
+                }
+                self.inner
+                    .lock()
+                    .unwrap()
+                    .seek(SeekFrom::Start(self.read_offset + offset))
+            }
+            SeekFrom::Current(offset) => {
+                let new_offset =
+                    (self.inner.lock().unwrap().stream_position()? as i64 + offset) as u64;
+                if new_offset > self.read_offset + self.file_size || new_offset < self.read_offset {
+                    return Err(Error::new(ErrorKind::InvalidInput, "Seek out of bounds"));
+                }
+                self.inner.lock().unwrap().seek(SeekFrom::Start(new_offset))
+            }
+            SeekFrom::End(offset) => {
+                let new_offset = (self.read_offset as i64 + self.file_size as i64 + offset) as u64;
+                if new_offset > self.read_offset + self.file_size || new_offset < self.read_offset {
+                    return Err(Error::new(ErrorKind::InvalidInput, "Seek out of bounds"));
+                }
+                self.inner.lock().unwrap().seek(SeekFrom::End(offset))
+            }
+        }
+    }
 }
 
 pub struct PFS0 {
@@ -105,5 +159,26 @@ impl PFS0 {
             .unwrap()
             .seek(SeekFrom::Start(read_offset as u64))?;
         self.reader.lock().unwrap().read(buf)
+    }
+
+    pub fn get_file_reader(&mut self, idx: usize) -> Result<PFS0FileReader> {
+        if idx >= self.file_entries.len() {
+            return Err(Error::new(ErrorKind::InvalidInput, "Invalid file index"));
+        }
+
+        let entry = &self.file_entries[idx];
+        let base_offset = std::mem::size_of::<Header>()
+            + std::mem::size_of::<FileEntry>() * self.header.file_count as usize
+            + self.header.string_table_size as usize;
+        let base_read_offset = base_offset + entry.offset as usize;
+        let read_offset = base_read_offset + entry.size as usize;
+        let reader = self.reader.clone();
+        let mut reader = PFS0FileReader {
+            inner: reader,
+            read_offset: read_offset as u64,
+            file_size: entry.size as u64,
+        };
+        reader.seek(SeekFrom::Start(read_offset as u64))?;
+        Ok(reader)
     }
 }
